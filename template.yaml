@@ -1,0 +1,105 @@
+kind: Template
+apiVersion: v1
+labels:
+  template: oslack-notifications
+objects:
+- kind: ImageStream
+  apiVersion: v1
+  metadata:
+    name: python35
+  spec:
+    tags:
+    - from:
+        kind: DockerImage
+        name: centos/python-35-centos7:latest
+      name: latest
+
+- apiVersion: v1
+  kind: ImageStream
+  metadata:
+    name: ${APPLICATION_NAME}
+
+- kind: BuildConfig
+  apiVersion: v1
+  metadata:
+    name: ${APPLICATION_NAME}
+  spec:
+    source:
+      type: "Git"
+      git:
+        uri: "https://github.com/cetres/oslack-notifications"
+    strategy:
+      type: Source
+      sourceStrategy:
+          from:
+            kind: ImageStreamTag
+            name: "python35:latest"
+          incremental: true
+    output:
+      to:
+        kind: "ImageStreamTag"
+        name: "${APPLICATION_NAME}:latest"
+
+- apiVersion: v1
+  kind: DeploymentConfig
+  metadata:
+    name: ${APPLICATION_NAME}
+    annotations:
+      description: Oslack - Openshift Slack Notifications
+  spec:
+    triggers:
+      - type: ConfigChange
+      - type: ImageChange
+        imageChangeParams:
+          automatic: true
+          containerNames:
+            - ${APPLICATION_NAME}
+          from:
+            kind: "ImageStreamTag"
+            name: ${APPLICATION_NAME}:latest
+    replicas: 1
+    selector:
+      name: ${APPLICATION_NAME}
+    template:
+      metadata:
+        name: ${APPLICATION_NAME}
+        labels:
+          name: ${APPLICATION_NAME}
+      spec:
+        containers:
+          - name: ${APPLICATION_NAME}
+            env:
+              - name: SLACK_URL
+                value: ${SLACK_URL}
+              - name: SLACK_TOKEN
+                value: ${SLACK_TOKEN}
+              - name: OPENSHIFT_URL
+                value: ${OPENSHIFT_URL}
+            image: ' '
+            readinessProbe:
+              tcpSocket:
+                  port: 8080
+              initialDelaySeconds: 60
+              timeoutSeconds: 1
+            stdin: true
+            tty: true
+
+parameters:
+- description: The name of the environment
+  displayName: Application name
+  name: APPLICATION_NAME
+  required: true
+  value: openshift-slack-notifications
+- description: Openshift API URL
+  displayName: OpenShift API URL
+  name: OPENSHIFT_URL
+  default: https://openshift.default.svc.cluster.local
+  required: true
+- description: The slack url that notifications will be sent to
+  displayName: Slack URL, e.g. http://company.slack.com
+  name: SLACK_URL
+  required: true
+- description: The slack token for authorization
+  displayName: Slack Token
+  name: SLACK_TOKEN
+  required: true
