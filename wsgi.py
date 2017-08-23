@@ -1,28 +1,30 @@
+# -*- coding: utf-8 -*-
 #
 #
-
+import os
 import logging
+import urllib3
 import time
 import threading
 from flask import Flask
-import atexit
 import yaml
-import asyncio
-import websockets
+from kubernetes import client, config, watch
 
 DEFAULT_CONFIG_FILE = "oslack.conf"
 
 logging.basicConfig(format='%(levelname)s: %(message)s', level=logging.DEBUG)
 
-class Oslack(threading.Thread):
+class KubeWatch(threading.Thread):
     config = {"slack": {}, "openshift": {}}
+    v1 = None
+    watch = None
     
     def load_config(self):
         global DEFAULT_CONFIG_FILE
         self.config["slack"]["url"] = os.environ.get("SLACK_URL", None)
         self.config["slack"]["token"] = os.environ.get("SLACK_TOKEN", None)
         if os.path.exists(DEFAULT_CONFIG_FILE):
-            self.config.update(yaml.load(open(CONFIG_FILE, "r")))
+            self.config.update(yaml.load(open(DEFAULT_CONFIG_FILE, "r")))
         else:
             logging.warning('Config file not found')
         if self.config["slack"].get("url", None) is None:
@@ -32,39 +34,41 @@ class Oslack(threading.Thread):
     
     def interrupt(self):
         logging.info('Exiting Oslack')
+        self.watch.stop()
         self.cancel()
 
-    async def os_listen(self):
-        url = "%s/" % self.config["openshift"]["url"]
-        async with websockets.connect(url) as websocket:
-            name = input("What's your name? ")
-            await websocket.send(name)
-            print("> {}".format(name))
-            greeting = await websocket.recv()
-            print("< {}".format(greeting))
-
     def run(self):
-        logging.debug('Running Thread Oslack...')
+        self.load_config()
+        logging.debug('Running Thread KubeWatch...')
+        kcli = config.new_client_from_config(config_file=self.config["openshift"].get("kube_config"))
+        client.configuration.host = self.config["openshift"]["url"]
+        client.configuration.api_key['authorization'] = "Bearer %s" % self.config["openshift"]["token"]
+        if self.config["openshift"]["insecure"]:
+            client.configuration.verify_ssl = False
+        self.v1 = client.CoreV1Api()
+        self.watch = watch.Watch()
         while True:
-            asyncio.get_event_loop().run_until_complete(os_listen())
-            logging.error('Async has stopped unexpectedly')
+            try:
+                for event in self.watch.stream(self.v1.list_namespace, _request_timeout=360):
+                    print("Event: %s %s [%s]" % (event['type'], event['object'].metadata.name, event['object'].metadata.creation_timestamp.strftime("%Y-%m-%d %H:%M")))
+            except urllib3.exceptions.ReadTimeoutError:
+                logging.error('Watch socket timed out')
+                continue
+            logging.error('Watch has stopped unexpectedly')
             time.sleep(10)
 
 
-def main():
-    app = Flask(__name__)
-    oslack = Oslack()
-    oslack.start()
-    
-    @app.route('/healthz', methods=['GET'])
-    def healthz():
-        return "OK"
+application = Flask(__name__)
+kubeWatch = KubeWatch()
+kubeWatch.start()
 
-    atexit.register(oslack.interrupt)
-    return app
+@application.route('/healthz', methods=['GET'])
+def healthz():
+    return "OK"
+
 
 
 
 if __name__ == "__main__":
-    app = create_app()
-    app.run()
+#    application = main()
+    application.run()
