@@ -8,6 +8,7 @@ import time
 import threading
 from flask import Flask
 import yaml
+import asyncio
 from kubernetes import client, config, watch
 
 DEFAULT_CONFIG_FILE = "oslack.conf"
@@ -15,9 +16,11 @@ DEFAULT_CONFIG_FILE = "oslack.conf"
 logging.basicConfig(format='%(levelname)s: %(message)s', level=logging.DEBUG)
 
 class KubeWatch(threading.Thread):
-    config = {"slack": {}, "openshift": {}}
+    config = { "slack": {}, "openshift": {} }
     v1 = None
-    watch = None
+    v1ext = None
+    watch_pods = None
+    watch_deployments = None
     
     def load_config(self):
         global DEFAULT_CONFIG_FILE
@@ -33,10 +36,23 @@ class KubeWatch(threading.Thread):
             logging.critical('Slack Token not found')
     
     def interrupt(self):
-        logging.info('Exiting Oslack')
-        self.watch.stop()
+        logging.info('Exiting KubeWatch')
+        self.watch_pods.stop()
+        self.watch_deployments.stop()
         self.cancel()
 
+    async def pods(self):
+        self.watch_pods = watch.Watch()
+        for event in self.watch_pods.stream(self.v1.list_pod_for_all_namespaces):
+            logger.info("Event: %s %s %s" % (event['type'], event['object'].kind, event['object'].metadata.name))
+            await asyncio.sleep(0)
+    
+    async def deployments(self):
+        self.watch_deployments = watch.Watch()
+        for event in self.watch_deployments.stream(self.v1ext.list_deployment_for_all_namespaces):
+            logger.info("Event: %s %s %s" % (event['type'], event['object'].kind, event['object'].metadata.name))
+            await asyncio.sleep(0)
+    
     def run(self):
         self.load_config()
         logging.debug('Running Thread KubeWatch...')
@@ -46,16 +62,11 @@ class KubeWatch(threading.Thread):
         if self.config["openshift"]["insecure"]:
             client.configuration.verify_ssl = False
         self.v1 = client.CoreV1Api()
-        self.watch = watch.Watch()
-        while True:
-            try:
-                for event in self.watch.stream(self.v1.list_namespace, _request_timeout=360):
-                    print("Event: %s %s [%s]" % (event['type'], event['object'].metadata.name, event['object'].metadata.creation_timestamp.strftime("%Y-%m-%d %H:%M")))
-            except urllib3.exceptions.ReadTimeoutError:
-                logging.error('Watch socket timed out')
-                continue
-            logging.error('Watch has stopped unexpectedly')
-            time.sleep(10)
+        self.v1ext = client.ExtensionsV1beta1Api()
+        ioloop = asyncio.get_event_loop()
+        ioloop.create_task(self.pods())
+        ioloop.create_task(self.deployments())
+        ioloop.run_forever()
 
 
 application = Flask(__name__)
@@ -65,8 +76,6 @@ kubeWatch.start()
 @application.route('/healthz', methods=['GET'])
 def healthz():
     return "OK"
-
-
 
 
 if __name__ == "__main__":
