@@ -78,6 +78,8 @@ objects:
         containers:
           - name: ${APPLICATION_NAME}
             env:
+              - name: APP_CONFIG
+                value: config.py
               - name: SLACK_API_TOKEN
                 value: ${SLACK_API_TOKEN}
               - name: OPENSHIFT_CONSOLE_URL

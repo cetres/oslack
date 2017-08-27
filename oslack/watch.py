@@ -48,9 +48,14 @@ class KubeWatch(Thread):
     
     def connect(self):
         logging.debug('Running Thread KubeWatch...')
-        kcli = config.new_client_from_config(config_file=self._config.openshift.get("kube_config"))
+        if "kube_config" in self._config.openshift:
+            kcli = config.new_client_from_config(config_file=self._config.openshift["kube_config"])
+        else:
+            client.configuration.host = "https://openshift.default.svc.cluster.local"
+            client.configuration.ssl_ca_cert = '/var/run/secrets/kubernetes.io/serviceaccount/ca.crt'
+        client.configuration.api_key_prefix['authorization'] = 'Bearer'
         client.configuration.host = self._config.openshift["url"]
-        client.configuration.api_key['authorization'] = "Bearer %s" % self._config.openshift["token"]
+        client.configuration.api_key['authorization'] = self._config.openshift["token"]
         logging.debug("Token: %s" % self._config.openshift["token"])
         if self._config.openshift["insecure"]:
             client.configuration.verify_ssl = False

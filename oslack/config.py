@@ -23,6 +23,7 @@ import yaml
 
 
 DEFAULT_CONFIG_FILE = "oslack.conf"
+DEFAULT_KUBERNETES_TOKEN = "/var/run/secrets/kubernetes.io/serviceaccount/token"
 
 
 class Config(object):
@@ -30,6 +31,10 @@ class Config(object):
         self._config = { "slack": {}, "openshift": {"insecure": False}, "alerts": [] }
         self._config["slack"]["url"] = os.environ.get("SLACK_API_URL", None)
         self._config["slack"]["token"] = os.environ.get("SLACK_API_TOKEN", None)
+        self._config["openshift"]["token"] = os.environ.get("OPENSHIFT_API_TOKEN", None)
+        if not self._config["openshift"]["token"] and os.path.exists(DEFAULT_KUBERNETES_TOKEN):
+            with open(DEFAULT_KUBERNETES_TOKEN,'r') as f:
+                self._config["openshift"]["token"] = f.read()
         if os.path.exists(DEFAULT_CONFIG_FILE):
             self._config.update(yaml.load(open(DEFAULT_CONFIG_FILE, "r")))
             logging.info('Config file loaded - %s' % DEFAULT_CONFIG_FILE)
