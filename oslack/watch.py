@@ -53,7 +53,7 @@ class KubeWatch(Thread):
             client.configuration.host = self._config.openshift["url"]
         else:
             client.configuration.host = "https://openshift.default.svc.cluster.local"
-            client.configuration.ssl_ca_cert = '/var/run/secrets/kubernetes.io/serviceaccount/ca.crt'
+            client.configuration.ssl_ca_cert = '/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt'
         client.configuration.api_key_prefix['authorization'] = 'Bearer'
         client.configuration.api_key['authorization'] = self._config.openshift["token"]
         logging.debug("Token: %s" % self._config.openshift["token"])
