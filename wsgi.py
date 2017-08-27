@@ -16,5 +16,4 @@ def healthz():
 
 
 if __name__ == "__main__":
-#    application = main()
     application.run()
